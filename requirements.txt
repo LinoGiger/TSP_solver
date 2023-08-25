@@ -1,0 +1,11 @@
+
+dash
+dash-leaflet
+requests
+json5
+numpy
+scipy
+ipython
+folium
+ortools
+tk
