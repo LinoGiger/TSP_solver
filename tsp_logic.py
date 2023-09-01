@@ -64,6 +64,7 @@ class TravelTimeCalculator:
         destination_coordinates = json.loads(destination_response.text)
         if not origin_coordinates or not destination_coordinates:
             print(f"No results found for origin: {origin} or destination: {destination}")
+            print(f"Impossible Route: {origin} -> {destination}")
             return None
 
         # Use the OpenRouteService API to get the route between the origin and destination
@@ -83,9 +84,15 @@ class TravelTimeCalculator:
 
         route_response = requests.post(f'https://api.openrouteservice.org/v2/directions/{self.mode_mapping[mode]}/geojson', headers=headers, data=json.dumps(body))
 
+        # Check if the 'features' key exists in the response
+        route_data = json.loads(route_response.text)
+        if 'features' not in route_data:
+            print(f"Error: 'features' key not found in the route response for origin: {origin} and destination: {destination}")
+            print("Response content:", route_response.text)
+            return None
 
         # Extract the route from the response
-        route = json.loads(route_response.text)['features'][0]['geometry']['coordinates']
+        route = route_data['features'][0]['geometry']['coordinates']
 
         return route
 
