@@ -103,6 +103,9 @@ class TravelTimeCalculator:
 
         for i in range(len(tour) - 1):
             route = self.get_route(locations[tour[i]], locations[tour[i+1]], mode)
+            if route is None:
+                print(f"Impossible Route: {locations[tour[i]]} -> {locations[tour[i+1]]}")
+                return None
             route = [(p[1], p[0]) for p in route]
             all_cordinates_of_route.extend(route)
 
@@ -110,6 +113,10 @@ class TravelTimeCalculator:
             folium.PolyLine(route, color="red", weight=2.5, opacity=1).add_to(m)
 
         route = [(p[1], p[0]) for p in self.get_route(locations[tour[-1]], locations[tour[0]], mode)]
+        if route is None:
+            print(f"Impossible Route: {locations[tour[-1]]} -> {locations[tour[0]]}")
+            return None
+        
         folium.Marker(location=route[0], popup=locations[tour[-1]]).add_to(m)
         folium.PolyLine(route, color="red", weight=2.5, opacity=1).add_to(m)
 
@@ -258,7 +265,7 @@ class FlowBasedMethod(TSPMethod):
             return np.array(tour)
 
         else:
-            print('No solution found!')
+            print('No solution found')
             return None
 
 class ConstraintProgrammingMethod(TSPMethod):
@@ -300,7 +307,7 @@ class ConstraintProgrammingMethod(TSPMethod):
             tour.append(0)
             return np.array(tour)
         else:
-            print('No solution found!')
+            print('No solution found')
             return None
 
 class TSPMethodFactory:
@@ -357,7 +364,6 @@ class TSPSolverInterface:
         # Calculate travel times
         travel_times = self.calculator.get_travel_time(locations, mode)
         print("cost Matrix", travel_times)
-        print(any(None in sublist for sublist in travel_times))
         if not any(None in sublist for sublist in travel_times):
             # Check the selected method and create the appropriate method instance
             method = TSPMethodFactory.create_method(method_name, travel_times)
@@ -376,5 +382,5 @@ class TSPSolverInterface:
             # Return the locations in the order they should be visited
             return ordered_locations, total_time_minutes, route
         else:
-            print('No travel times were obtained!')
+            print('No travel times were obtained')
             return None, None, None

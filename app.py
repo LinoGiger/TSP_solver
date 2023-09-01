@@ -186,7 +186,7 @@ def combined_callback(submit_n_clicks, marker_store, open_tab_n_clicks, save_rou
         # Call the TSPSolverInterface's solve_tsp method
         ordered_locations, total_time_for_route, route = TSPInterface.solve_tsp(location_names, transport_mode, tsp_method)
 
-        if ordered_locations is None:
+        if route is None:
             return "Impossible Route or error in request. Check Terminal for additional information.", "", dash.no_update
 
         # Format the ordered locations into a readable string
