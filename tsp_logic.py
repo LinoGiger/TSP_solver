@@ -382,5 +382,9 @@ class TSPSolverInterface:
             # Return the locations in the order they should be visited
             return ordered_locations, total_time_minutes, route
         else:
-            print('No travel times were obtained')
+            print('No travel times were obtained for the following connections:')
+            for i in range(len(travel_times)):
+                for j in range(len(travel_times[i])):
+                    if travel_times[i][j] is None:
+                        print(f"{locations[i]} -> {locations[j]}")
             return None, None, None
