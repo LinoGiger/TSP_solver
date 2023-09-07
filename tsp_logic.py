@@ -10,6 +10,7 @@ from itertools import permutations
 from ortools.linear_solver import pywraplp
 from ortools.constraint_solver import routing_enums_pb2
 from ortools.constraint_solver import pywrapcp
+import time
 
 class TravelTimeCalculator:
     def __init__(self, API_KEY):
@@ -160,33 +161,36 @@ class TSPMethod:
     def __init__(self, distance_matrix):
         self.distance_matrix = np.array(distance_matrix)
 
-    def solve(self):
+    def solve(self, max_time_seconds):
+        # This method should be overridden in subclasses and return True/False if optimal route was found and the tour itself 
         raise NotImplementedError("This method should be overridden in subclasses")
     
 class TwoOptMethod(TSPMethod): 
-    def solve(self):
-        self.distance_matrix = self.distance_matrix.astype(int) # Convert to integers
+    def solve(self, max_time_seconds):
+        start_time = time.time()  # Record the start time
+
+        self.distance_matrix = self.distance_matrix.astype(int)  # Convert to integers
+
         # Step 1: Initial solution using the Hungarian method
         rows, cols = linear_sum_assignment(self.distance_matrix)
-        # Create an initial tour
-        initial_tour = np.append(cols, cols[0])
+        initial_tour = np.append(cols, cols[0])  # Create an initial tour
 
         # Step 2: Optimize the tour with 2-opt algorithm
-        optimized_tour = self._two_opt(initial_tour)
+        optimized_tour, optimal = self._two_opt(initial_tour, start_time, max_time_seconds)
 
-        # Keep trying to optimize until no improvement
-        while not np.array_equal(optimized_tour, initial_tour):
-            initial_tour = optimized_tour
-            optimized_tour = self._two_opt(initial_tour)
+        return optimal, optimized_tour
 
-        return optimized_tour
-
-    def _two_opt(self, tour):
-        # This function iterates over all pairs of two edges in the tour,
-        # and if swapping them results in an improvement, performs the swap
+    def _two_opt(self, tour, start_time, max_time_seconds):
         num_cities = len(tour)
+        optimal = True  # Initialize as True, will set to False if time limit is reached
         for i in range(num_cities - 1):
             for j in range(i + 2, num_cities - 1):
+                # Check if the time limit has been reached
+                elapsed_time = time.time() - start_time
+                if elapsed_time > max_time_seconds:
+                    print("Time limit reached.")
+                    optimal = False  # Set optimal to False as time limit is reached
+                    return tour, optimal
                 # Don't swap first and last edge
                 if i == 0 and j == num_cities - 2:
                     continue
@@ -198,32 +202,47 @@ class TwoOptMethod(TSPMethod):
                 if new_distance < old_distance:
                     tour[i + 1 : j + 1] = tour[j : i : -1]
 
-        return tour
+        return tour, optimal
     
 class PermutationsMethod(TSPMethod):
-    def solve(self):
+    def solve(self, max_time_seconds):
+        start_time = time.time()  # Record the start time
+
         n = self.distance_matrix.shape[0]
         best_tour = None
         best_distance = np.inf
+        optimal = True  # Initialize as True, will set to False if time limit is reached
 
         for tour in permutations(range(n)):
+            # Check if the time limit has been reached
+            
+            elapsed_time = time.time() - start_time
+            if elapsed_time > max_time_seconds:
+                print("Time limit reached.")
+                optimal = False  # Set optimal to False as time limit is reached
+                return optimal, best_tour  # Return the best tour found so far and optimal status
+
             distance = sum(self.distance_matrix[tour[i-1], tour[i]] for i in range(n))
             if distance < best_distance:
                 best_distance = distance
                 best_tour = tour
-        
+
         # Add the first city to the end of the tour
         best_tour = np.append(best_tour, best_tour[0])
-        
-        return np.array(best_tour)
+
+        return optimal, np.array(best_tour)  # Return the best tour and whether it's optimal
 
 class FlowBasedMethod(TSPMethod):
-    def solve(self):
-        self.distance_matrix = self.distance_matrix.astype(int) # integers required by SCIP
-        np.fill_diagonal(self.distance_matrix, np.iinfo(np.int32).max)  # Discourage staying in the same city - not really sure why but when i don't do this, we just stay in the same location for n steps
+    def solve(self, max_time_seconds):
+        self.distance_matrix = self.distance_matrix.astype(int)  # integers required by SCIP
+        np.fill_diagonal(self.distance_matrix, np.iinfo(np.int32).max)  # Discourage staying in the same city
         n = self.distance_matrix.shape[0]
+        
         # Create the linear solver
         solver = pywraplp.Solver.CreateSolver('SCIP')
+        
+        # Set the time limit in milliseconds
+        solver.set_time_limit(int(max_time_seconds * 1000))
 
         # Create variables
         x = {}
@@ -248,29 +267,39 @@ class FlowBasedMethod(TSPMethod):
 
         # Solve the problem
         status = solver.Solve()
-        # If a solution was found, extract the tour
-        if status == pywraplp.Solver.OPTIMAL:
-            # Start from the first city
-            tour = [0]
-            current_city = 0
-            while len(tour) < n:
-                # Go to the next city
-                for j in range(n):
-                    if x[current_city, j].solution_value() > 0.5:
-                        tour.append(j)
-                        current_city = j
-                        break
-            # Add the first city to the end of the tour
-            tour.append(0)
-            return np.array(tour)
 
+        # Initialize tour list
+        tour = []
+
+        # Extract the tour if a solution exists
+        if status == pywraplp.Solver.OPTIMAL:
+            optimal = True
         else:
-            print('No solution found')
-            return None
+            optimal = False  # Assume time limit reached if not OPTIMAL
+            if status != pywraplp.Solver.FEASIBLE:
+                print("No solution found")
+                return False, None
+
+        # Start from the first city
+        current_city = 0
+        while len(tour) < n:
+            # Go to the next city
+            for j in range(n):
+                if x[current_city, j].solution_value() > 0.5:
+                    tour.append(j)
+                    current_city = j
+                    break
+        # Add the first city to the end of the tour
+        tour.append(0)
+
+        if not optimal:
+            print("Time limit reached.")
+
+        return optimal, np.array(tour)
 
 class ConstraintProgrammingMethod(TSPMethod):
-    def solve(self):
-        self.distance_matrix = self.distance_matrix.astype(int) 
+    def solve(self, max_time_seconds):
+        self.distance_matrix = self.distance_matrix.astype(int)
         n = self.distance_matrix.shape[0]
 
         # Create the routing model
@@ -288,27 +317,32 @@ class ConstraintProgrammingMethod(TSPMethod):
 
         # Set parameters
         search_parameters = pywrapcp.DefaultRoutingSearchParameters()
-        search_parameters.time_limit.seconds = 30
+        search_parameters.time_limit.seconds = max_time_seconds
         search_parameters.first_solution_strategy = (
             routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC)
 
         # Solve the problem
         solution = routing.SolveWithParameters(search_parameters)
 
-        # If a solution was found, extract the tour
+        # Initialize tour list
+        tour = []
+
+        # Determine if the solution is optimal
+        optimal = (solution is not None)
+
+        # Extract the tour if a solution exists
         if solution:
             index = routing.Start(0)
-            tour = []
             while not routing.IsEnd(index):
                 tour.append(manager.IndexToNode(index))
                 index = solution.Value(routing.NextVar(index))
-
             # Add the first city to the end of the tour
             tour.append(0)
-            return np.array(tour)
-        else:
-            print('No solution found')
-            return None
+
+        if not optimal:
+            print("Time limit reached.")
+
+        return optimal, np.array(tour) if tour else None
 
 class TSPMethodFactory:
     #add new methods here
@@ -331,8 +365,8 @@ class TSPSolver:
         self.distance_matrix = np.array(distance_matrix)
         self.method = method
 
-    def solve_tsp(self):
-        return self.method.solve()
+    def solve_tsp(self, max_time_seconds):
+        return self.method.solve(max_time_seconds)
     
     def get_travel_time(self, tour):
         return sum(self.distance_matrix[tour[i-1], tour[i]] for i in range(1, len(tour)))
@@ -360,7 +394,7 @@ class TSPSolverInterface:
     def __init__(self, API_KEY):
         self.calculator = TravelTimeCalculator(API_KEY)
 
-    def solve_tsp(self, locations, mode, method_name):
+    def solve_tsp(self, locations, mode, method_name, max_time_seconds):
         # Calculate travel times
         travel_times = self.calculator.get_travel_time(locations, mode)
         print("cost Matrix", travel_times)
@@ -370,21 +404,22 @@ class TSPSolverInterface:
 
             solver = TSPSolver(travel_times, method)
             
-            tour = solver.solve_tsp()
+            optimal, tour = solver.solve_tsp(max_time_seconds)
+            if tour is None:
+                return False, None, None, None
             solver.pretty_print(tour, locations)  # Pass locations to pretty_print method
             total_time_minutes = solver.get_travel_time(tour) / 60
             ordered_locations = [locations[i] for i in tour]
-
 
             # Visualize the tour
             route = self.calculator.visualize_tsp_tour(locations, tour, mode, total_time_minutes, ordered_locations)
 
             # Return the locations in the order they should be visited
-            return ordered_locations, total_time_minutes, route
+            return optimal, ordered_locations, total_time_minutes, route
         else:
             print('No travel times were obtained for the following connections:')
             for i in range(len(travel_times)):
                 for j in range(len(travel_times[i])):
                     if travel_times[i][j] is None:
                         print(f"{locations[i]} -> {locations[j]}")
-            return None, None, None
+            return None, None, None, None

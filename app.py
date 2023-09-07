@@ -57,6 +57,10 @@ app.layout = html.Div([
                 ],
                 value='TwoOpt'
             ),
+            html.Div([
+            html.Label('Time Limit (seconds):', style={'marginRight': '10px'}),
+            dcc.Input(type='number', id='time-limit', min=0, step=1, value=60, style={'textAlign': 'right', 'width': '15%'}),  # Adjusted width to 50%
+            ], style={'marginTop': '10px', 'display': 'flex', 'alignItems': 'center'}),
 
             html.Button('Submit', id='submit-button', n_clicks=0, style={'marginTop': '10px'}),
             html.Button('Open in new Tab', id='open-tab-button', n_clicks=0, style={'marginLeft': '10px'}),
@@ -66,6 +70,7 @@ app.layout = html.Div([
                 id="loading",
                 type="dot",
                 children=[
+                    html.Div([html.Strong(id='info')]),  # This is where information about the route will be displayed if nessesary 
                     html.Div(id='path-display'),  # This is where the path will be displayed
                     html.Div(id='travel-time-display') # This is where the travel time will be displayed
                 ]
@@ -154,7 +159,8 @@ def update_locations_list(locations_json):
 
 #General callback for updating the map - needs to be all in one function because of Dash limitations
 @app.callback(
-    [Output('path-display', 'children'),
+    [Output('info', 'children'),
+     Output('path-display', 'children'),
      Output('travel-time-display', 'children'),
      Output('map', 'children'),],
     [Input('submit-button', 'n_clicks'),
@@ -164,11 +170,12 @@ def update_locations_list(locations_json):
     [State('locations-store', 'children'),
      State('transport', 'value'),
      State('method', 'value'),
+     State('time-limit', 'value'),
      State('map', 'children'),
      State('path-display', 'children')],
     prevent_initial_call=True
 )
-def combined_callback(submit_n_clicks, marker_store, open_tab_n_clicks, save_route_n_clicks, locations_json, transport_mode, tsp_method, map_children, current_path_display):
+def combined_callback(submit_n_clicks, marker_store, open_tab_n_clicks, save_route_n_clicks, locations_json, transport_mode, tsp_method, time_limit, map_children, current_path_display):
     ctx = callback_context
 
     # Check if the submit-button was clicked
@@ -178,16 +185,15 @@ def combined_callback(submit_n_clicks, marker_store, open_tab_n_clicks, save_rou
 
         # Check if there are less than 2 locations
         if len(locations) < 2:
-            return "Please add at least two locations to compute a route.", "", dash.no_update
+            return "Please add at least two locations to compute a route.", "", "", dash.no_update
 
         # Extract the names of the locations
         location_names = [location['name'] for location in locations]
-
         # Call the TSPSolverInterface's solve_tsp method
-        ordered_locations, total_time_for_route, route = TSPInterface.solve_tsp(location_names, transport_mode, tsp_method)
+        optimal, ordered_locations, total_time_for_route, route = TSPInterface.solve_tsp(location_names, transport_mode, tsp_method, time_limit)
 
         if route is None:
-            return "Impossible Route or error in request. Check Terminal for additional information.", "", dash.no_update
+            return "Impossible Route or error in request. Check Terminal for additional information.", "", "", dash.no_update
 
         # Format the ordered locations into a readable string
         path_string = ' -> '.join(ordered_locations)
@@ -208,16 +214,18 @@ def combined_callback(submit_n_clicks, marker_store, open_tab_n_clicks, save_rou
         polyline = dl.Polyline(positions=route, color="red", weight=2.5, opacity=1)
         map_children.append(polyline)
 
-
-        return path_string, travel_time_string, map_children
+        if optimal:
+            return "Optimal Route Found", path_string, travel_time_string, map_children
+        else:
+            return "Suboptimal Route Found, solver didn't finish", path_string, travel_time_string, map_children
 
     # Check if the open-tab-button was clicked
     elif ctx.triggered[0]['prop_id'] == 'open-tab-button.n_clicks':
         # Check if there is a path to display or a message indicating that the user should generate a route first
         if not current_path_display or current_path_display.startswith("Please"):
-            return "Please generate Route first.", dash.no_update, dash.no_update
+            return "Please generate Route first.", dash.no_update, dash.no_update, dash.no_update
         webbrowser.open('temp_route_visualization.html', new=2)
-        return dash.no_update, dash.no_update, dash.no_update
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update
     
     elif ctx.triggered[0]['prop_id'] == 'save-route-button.n_clicks':
         return save_route(locations_json, current_path_display)
@@ -229,16 +237,16 @@ def combined_callback(submit_n_clicks, marker_store, open_tab_n_clicks, save_rou
         non_marker_children = [child for child in map_children if child['type'] != 'Marker']
         map_children = non_marker_children + markers
 
-        return dash.no_update, dash.no_update, map_children
+        return dash.no_update, dash.no_update, dash.no_update, map_children
 
 def save_route(locations_json, current_path_display):
     # Check if there is a path to display or a message indicating that the user should generate a route first
     if not current_path_display or current_path_display.startswith("Please"):
-        return "Please generate Route first.", dash.no_update, dash.no_update
+        return "Please generate Route first.", dash.no_update, dash.no_update, dash.no_update
     
     file_name = get_user_input()
     if not file_name:
-        return dash.no_update, dash.no_update, dash.no_update
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update
 
     # Ensure the "saved_routes" directory exists
     saved_routes_dir = os.path.join(dir_path, "saved_routes")
@@ -252,7 +260,7 @@ def save_route(locations_json, current_path_display):
         html_string = source_file.read()
         html_string = html_string.replace('temp_route_visualization', file_name)
         dest_file.write(html_string)
-    return f"Route has beenn saved in the 'saved_routes' Folder as '{file_name}.html'", "", dash.no_update
+    return f"Route has beenn saved in the 'saved_routes' Folder as '{file_name}.html'", "", "", dash.no_update
 
 def get_user_input():
     # Create the main window
