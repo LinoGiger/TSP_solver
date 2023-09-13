@@ -1,10 +1,7 @@
-import tkinter as tk
 import requests
 import json
 import numpy as np
 from scipy.optimize import linear_sum_assignment
-from IPython.display import IFrame
-import webbrowser
 import folium
 from itertools import permutations
 from ortools.linear_solver import pywraplp
@@ -268,8 +265,8 @@ class FlowBasedMethod(TSPMethod):
         # Solve the problem
         status = solver.Solve()
 
-        # Initialize tour list
-        tour = []
+        # Initialize tour list with the first city
+        tour = [0]
 
         # Extract the tour if a solution exists
         if status == pywraplp.Solver.OPTIMAL:
