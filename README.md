@@ -42,7 +42,7 @@ To contribute to this project, ensure that any new methods or changes are thorou
 
 Running the App
 -----------------
-To run the app, run the `app.py` file after cloning the repository.
+After cloning the repository make sure you have added a valid API Key in the `API_KEY.txt` file, then run the `app.py` file and go to your local host on any webbrowser (app was tested on Chrome).
 
 Specifying Locations
 --------------------
